@@ -31,6 +31,16 @@ class DatabaseCommandControllerTest extends AbstractCommandTest
     /**
      * @test
      */
+    public function multipleUpdateTypesCanBeSpecified()
+    {
+        $output = $this->executeConsoleCommand('database:updateschema', ['field.add,table.add', '--verbose']);
+        $this->assertContains('No schema updates were performed for update types:', $output);
+        $this->assertContains('"field.add", "table.add"', $output);
+    }
+
+    /**
+     * @test
+     */
     public function allUpdatesCanBePerformedWhenSpecified()
     {
         $output = $this->executeConsoleCommand('database:updateschema', ['*', '--verbose']);
@@ -43,16 +53,18 @@ class DatabaseCommandControllerTest extends AbstractCommandTest
      */
     public function addingAndRemovingFieldsAndTablesIncludingVerbositySwitchWork()
     {
-        $this->installFixtureExtensionCode('ext_test');
-        $this->executeConsoleCommand('install:generatepackagestates', ['--activate-default']);
+        self::installFixtureExtensionCode('ext_test');
+        try {
+            $this->executeConsoleCommand('install:generatepackagestates', ['--activate-default']);
 
-        $output = $this->executeConsoleCommand('database:updateschema', ['*', '--verbose']);
+            $output = $this->executeConsoleCommand('database:updateschema', ['*', '--verbose']);
 
-        $this->assertContains('The following database schema updates were performed:', $output);
-        $this->assertContains('Change fields', $output);
-        $this->assertContains('Add tables', $output);
-
-        $this->removeFixtureExtensionCode('ext_test');
+            $this->assertContains('The following database schema updates were performed:', $output);
+            $this->assertContains('Change fields', $output);
+            $this->assertContains('Add tables', $output);
+        } finally {
+            self::removeFixtureExtensionCode('ext_test');
+        }
         $this->executeConsoleCommand('install:generatepackagestates', ['--activate-default']);
 
         $output = $this->executeConsoleCommand('database:updateschema', ['*', '--verbose']);
@@ -71,6 +83,23 @@ class DatabaseCommandControllerTest extends AbstractCommandTest
         $output = $this->executeConsoleCommand('database:updateschema', ['*', '--verbose']);
 
         $this->assertContains('No schema updates were performed for update types:', $output);
+    }
+
+    /**
+     * @test
+     */
+    public function databaseSchemaCanBeUpdatedWithExtensionsAccessingDatabaseCaches()
+    {
+        self::installFixtureExtensionCode('ext_test_cache');
+        $this->executeConsoleCommand('install:generatepackagestates', ['--activate-default']);
+        $this->executeMysqlQuery('DROP TABLE IF EXISTS `cache_rootline`');
+        try {
+            $output = $this->executeConsoleCommand('database:updateschema', ['--verbose']);
+            $this->assertContains('CREATE TABLE `cache_rootline`', $output);
+        } finally {
+            self::removeFixtureExtensionCode('ext_test_cache');
+            $this->executeConsoleCommand('install:generatepackagestates', ['--activate-default']);
+        }
     }
 
     /**
@@ -104,7 +133,7 @@ class DatabaseCommandControllerTest extends AbstractCommandTest
      */
     public function schemaUpdateShowsErrorMessageIfTheyOccur()
     {
-        $this->installFixtureExtensionCode('ext_broken_sql');
+        self::installFixtureExtensionCode('ext_broken_sql');
         $this->executeConsoleCommand('install:generatepackagestates', ['--activate-default']);
         try {
             $output = $this->commandDispatcher->executeCommand('database:updateschema', ['*']);
@@ -120,7 +149,7 @@ class DatabaseCommandControllerTest extends AbstractCommandTest
         }
         $this->assertContains('The following errors occurred:', $output);
         $this->assertContains('SQL Statement', $output);
-        $this->removeFixtureExtensionCode('ext_broken_sql');
+        self::removeFixtureExtensionCode('ext_broken_sql');
         $this->executeConsoleCommand('install:generatepackagestates', ['--activate-default']);
     }
 
@@ -137,9 +166,84 @@ class DatabaseCommandControllerTest extends AbstractCommandTest
     /**
      * @test
      */
+    public function sqlCanBeImportedWithSpecifiedConnection()
+    {
+        $sql = 'SELECT username from be_users where username="_cli_";';
+        $output = $this->executeConsoleCommand('database:import', ['--connection', 'Default'], [], $sql);
+        $this->assertSame('_cli_', trim($output));
+    }
+
+    /**
+     * @test
+     */
+    public function databaseImportFailsWithNotExistingConnection()
+    {
+        $sql = 'SELECT username from be_users where username="_cli_";';
+        try {
+            $output = $this->commandDispatcher->executeCommand('database:import', ['--connection', 'foo'], [], $sql);
+        } catch (FailedSubProcessCommandException $e) {
+            $output = $e->getOutputMessage();
+        }
+        $this->assertContains('No suitable MySQL connection found for import', $output);
+    }
+
+    /**
+     * @test
+     */
+    public function databaseExportFailsWithNotExistingConnection()
+    {
+        try {
+            $output = $this->commandDispatcher->executeCommand('database:export', ['--connection', 'foo']);
+        } catch (FailedSubProcessCommandException $e) {
+            $output = $e->getOutputMessage();
+        }
+        $this->assertContains('No MySQL connections found to export. Given connection "foo" is not configured as MySQL connection', $output);
+    }
+
+    /**
+     * @test
+     */
+    public function databaseExportWorksWithGivenConnection()
+    {
+        $output = $this->executeConsoleCommand('database:export', ['--connection', 'Default']);
+        $this->assertContains('-- Dump of TYPO3 Connection "Default"', $output);
+    }
+
+    /**
+     * @test
+     */
     public function databaseExportCanExcludeTables()
     {
-        $output = $this->executeConsoleCommand('database:export', ['--exclude-tables' => 'sys_log']);
+        $output = $this->executeConsoleCommand('database:export', ['--exclude', 'sys_log']);
         $this->assertNotContains('CREATE TABLE `sys_log`', $output);
+    }
+
+    /**
+     * @test
+     */
+    public function databaseExportCanExcludeTablesWithWildcards()
+    {
+        $output = $this->executeConsoleCommand('database:export', ['--exclude', 'cf_*', '-e', 'cache_*']);
+        $this->assertNotContains('CREATE TABLE `cf_', $output);
+        $this->assertNotContains('CREATE TABLE `cache_', $output);
+    }
+
+    /**
+     * @test
+     */
+    public function databaseExportCanExcludeTablesWithDeprecatedOption()
+    {
+        $output = $this->executeConsoleCommand('database:export', ['--exclude-tables', 'sys_log']);
+        $this->assertNotContains('CREATE TABLE `sys_log`', $output);
+    }
+
+    /**
+     * @test
+     */
+    public function databaseExportCanExcludeTablesWithWildcardsWithDeprecatedOption()
+    {
+        $output = $this->executeConsoleCommand('database:export', ['--exclude-tables', 'cf_*,cache_*']);
+        $this->assertNotContains('CREATE TABLE `cf_', $output);
+        $this->assertNotContains('CREATE TABLE `cache_', $output);
     }
 }

@@ -14,8 +14,12 @@ namespace Helhum\Typo3Console\Install\Upgrade;
  *
  */
 
-use Helhum\Typo3Console\Tests\Unit\Install\Upgrade\Fixture\DummyUpgradeWizard;
+use Symfony\Component\Console\Output\BufferedOutput;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
+use TYPO3\CMS\Install\Service\UpgradeWizardsService;
+use TYPO3\CMS\Install\Updates\ChattyInterface;
+use TYPO3\CMS\Install\Updates\ConfirmableInterface;
+use TYPO3\CMS\Install\Updates\RepeatableInterface;
 
 /**
  * Executes a single upgrade wizard
@@ -28,61 +32,78 @@ class UpgradeWizardExecutor
      */
     private $factory;
 
-    public function __construct(UpgradeWizardFactory $factory = null)
+    /**
+     * @var UpgradeWizardsService
+     */
+    private $upgradeWizardsService;
+
+    public function __construct(UpgradeWizardFactory $factory = null, UpgradeWizardsService $upgradeWizardsService = null)
     {
-        $this->factory = $factory ?: new UpgradeWizardFactory();
+        $this->factory = $factory ?? new UpgradeWizardFactory();
+        $this->upgradeWizardsService = $upgradeWizardsService ?? GeneralUtility::makeInstance(UpgradeWizardsService::class);
     }
 
-    public function executeWizard(string $identifier, array $rawArguments = [], bool $force = false): UpgradeWizardResult
+    public function executeWizard(string $identifier, array $arguments = [], bool $force = false): UpgradeWizardResult
     {
         $upgradeWizard = $this->factory->create($identifier);
+        $identifier = $upgradeWizard->getIdentifier();
+        $messages = [];
+        $hasPerformed = $userHasDecided = $requiresConfirmation = $succeeded = false;
+        $userWantsExecution = true;
+        $output = new BufferedOutput();
+        $isWizardDone = $this->upgradeWizardsService->isWizardDone($identifier);
 
-        if ($force) {
-            $closure = \Closure::bind(function () use ($upgradeWizard) {
-                /** @var DummyUpgradeWizard $upgradeWizard here to avoid annoying (and wrong) protected method inspection in PHPStorm */
-                $upgradeWizard->markWizardAsDone(0);
-            }, null, $upgradeWizard);
-            $closure();
+        if ($upgradeWizard instanceof ConfirmableInterface) {
+            $userHasDecided = isset($arguments['confirm']);
+            $requiresConfirmation = $upgradeWizard->getConfirmation()->isRequired();
+            $userWantsExecution = !empty($arguments['confirm']);
+        }
+        if ($upgradeWizard instanceof ChattyInterface) {
+            $upgradeWizard->setOutput($output);
         }
 
-        if (!$upgradeWizard->shouldRenderWizard()) {
-            return new UpgradeWizardResult(false);
+        $checkForUpdateNecessary = $userWantsExecution && (!$isWizardDone || $force);
+        if ($checkForUpdateNecessary && $upgradeWizard->updateNecessary()) {
+            $succeeded = $upgradeWizard->executeUpdate();
+            $hasPerformed = true;
+        }
+        $messages[] = $output->fetch();
+        if ($succeeded) {
+            $messages[] = sprintf('<em>Successfully executed upgrade wizard "%s".</em>', $identifier);
+        }
+        if ($hasPerformed && !$succeeded) {
+            $messages[] = sprintf('<error>Upgrade wizard "%s" had errors during execution.</error>', $identifier);
+        }
+        if ($hasPerformed && $force && $isWizardDone) {
+            $messages[] = sprintf('<info>Upgrade wizard "%s" was executed (forced).</info>', $identifier);
+        }
+        if (!$hasPerformed && !$force && $isWizardDone) {
+            $messages[] = sprintf('<info>Upgrade wizard "%s" was skipped because it is marked as done.</info>', $identifier);
+        }
+        if (!$hasPerformed && $checkForUpdateNecessary) {
+            $messages[] = sprintf('<info>Upgrade wizard "%s" was skipped because no operation is needed.</info>', $identifier);
+        }
+        if ($userHasDecided && !$hasPerformed) {
+            if ($requiresConfirmation && !$isWizardDone) {
+                $messages[] = sprintf('<error>Skipped wizard "%s" but it needs confirmation!</error>', $identifier);
+            } else {
+                $messages[] = sprintf('<info>Skipped wizard "%s" and marked as executed.</info>', $identifier);
+            }
+        }
+        if (!$isWizardDone && ($succeeded || ($checkForUpdateNecessary && !$hasPerformed)) && !$upgradeWizard instanceof RepeatableInterface) {
+            $this->upgradeWizardsService->markWizardAsDone($identifier);
+        }
+        if (!$isWizardDone && $userHasDecided && !$hasPerformed && !$requiresConfirmation) {
+            $this->upgradeWizardsService->markWizardAsDone($identifier);
         }
 
-        // OMG really?
-        GeneralUtility::_GETset(
-            [
-                'values' => [
-                    $identifier => $this->processRawArguments($identifier, $rawArguments),
-                    'TYPO3\\CMS\\Install\\Updates\\' . $identifier => $this->processRawArguments($identifier, $rawArguments),
-                ],
-            ],
-            'install'
-        );
-
-        $dbQueries = [];
-        $message = '';
-        $hasPerformed = $upgradeWizard->performUpdate($dbQueries, $message);
-
-        return new UpgradeWizardResult($hasPerformed, $dbQueries, [$message]);
+        return new UpgradeWizardResult($hasPerformed, $messages, $succeeded);
     }
 
     public function wizardNeedsExecution(string $identifier): bool
     {
         $upgradeWizard = $this->factory->create($identifier);
 
-        return $upgradeWizard->shouldRenderWizard();
-    }
-
-    private function processRawArguments(string $identifier, array $rawArguments = [])
-    {
-        $processedArguments = [];
-        foreach ($rawArguments as $argument) {
-            parse_str($argument, $processedArgument);
-            $processedArguments = array_replace_recursive($processedArguments, $processedArgument);
-        }
-        $argumentNamespace = str_replace('TYPO3\\CMS\\Install\\Updates\\', '', $identifier);
-
-        return isset($processedArguments[$argumentNamespace]) ? $processedArguments[$argumentNamespace] : $processedArguments;
+        return $upgradeWizard->updateNecessary();
     }
 }

@@ -14,6 +14,8 @@ namespace Helhum\Typo3Console\Tests\Functional\Command;
  *
  */
 
+use Helhum\Typo3Console\Mvc\Cli\FailedSubProcessCommandException;
+
 class ConfigurationCommandControllerTest extends AbstractCommandTest
 {
     /**
@@ -71,8 +73,8 @@ class ConfigurationCommandControllerTest extends AbstractCommandTest
      */
     public function activeConfigurationReflectsRealState()
     {
-        $output = $this->executeConsoleCommand('configuration:showactive', ['SYS/caching/cacheConfigurations/extbase_datamapfactory_datamap/backend', '--json']);
-        $this->assertSame('TYPO3\\CMS\\Core\\Cache\\Backend\\Typo3DatabaseBackend', \json_decode($output));
+        $output = $this->executeConsoleCommand('configuration:showactive', ['SYS/lang/format/priority', '--json']);
+        $this->assertSame('xlf,xml', \json_decode($output));
     }
 
     /**
@@ -123,5 +125,47 @@ class ConfigurationCommandControllerTest extends AbstractCommandTest
         $this->executeConsoleCommand('configuration:set', ['EXTCONF/foo/bar', 'baz']);
         $config = require getenv('TYPO3_PATH_ROOT') . '/typo3conf/LocalConfiguration.php';
         $this->assertSame('baz', $config['EXTCONF']['foo']['bar']);
+    }
+
+    /**
+     * @test
+     */
+    public function arraysCanBeSetAsJson()
+    {
+        $this->executeConsoleCommand('configuration:set', ['EXTCONF/foo/baz', '["baz"]', '--json']);
+        $config = require getenv('TYPO3_PATH_ROOT') . '/typo3conf/LocalConfiguration.php';
+        $this->assertSame(['baz'], $config['EXTCONF']['foo']['baz']);
+    }
+
+    /**
+     * @test
+     */
+    public function booleanCanBeSetAsJson()
+    {
+        $this->executeConsoleCommand('configuration:set', ['EXTCONF/foo/bool', 'true', '--json']);
+        $config = require getenv('TYPO3_PATH_ROOT') . '/typo3conf/LocalConfiguration.php';
+        $this->assertTrue($config['EXTCONF']['foo']['bool']);
+    }
+
+    /**
+     * @test
+     */
+    public function nullCanBeSetAsJson()
+    {
+        $this->executeConsoleCommand('configuration:set', ['EXTCONF/foo/null', 'null', '--json']);
+        $config = require getenv('TYPO3_PATH_ROOT') . '/typo3conf/LocalConfiguration.php';
+        $this->assertNull($config['EXTCONF']['foo']['null']);
+    }
+
+    /**
+     * @test
+     */
+    public function invalidJsonOutputsErrorMessage()
+    {
+        try {
+            $this->commandDispatcher->executeCommand('configuration:set', ['EXTCONF/foo/bla', '[asd{', '--json']);
+        } catch (FailedSubProcessCommandException $e) {
+            $this->assertContains('Could not decode value', $e->getOutputMessage());
+        }
     }
 }

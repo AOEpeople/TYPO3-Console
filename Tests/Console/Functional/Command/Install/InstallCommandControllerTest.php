@@ -31,6 +31,30 @@ class InstallCommandControllerTest extends AbstractCommandTest
     /**
      * @test
      */
+    public function setupCommandWorksOnSqLiteWithoutErrors()
+    {
+        if (!extension_loaded('pdo_sqlite')) {
+            $this->markTestSkipped('Cannot execute SQLite test, when SQLite module is disabled');
+        }
+        @unlink(getenv('TYPO3_PATH_ROOT') . '/typo3conf/PackageStates.php');
+        @unlink(getenv('TYPO3_PATH_ROOT') . '/typo3conf/LocalConfiguration.php');
+        $output = $this->executeConsoleCommand(
+            'install:setup',
+            [
+                '--no-interaction',
+                '--database-driver',
+                'pdo_sqlite',
+            ]
+        );
+        $this->assertContains('Successfully installed TYPO3 CMS!', $output);
+        $this->assertContains('Set up extensions', $output);
+        $this->assertFileNotExists(getenv('TYPO3_PATH_WEB') . '/.htaccess');
+        $this->assertFileNotExists(getenv('TYPO3_PATH_WEB') . '/web.config');
+    }
+
+    /**
+     * @test
+     */
     public function setupCommandDoesNotSetupExtensionsIfRequested()
     {
         $this->executeMysqlQuery('DROP DATABASE IF EXISTS ' . getenv('TYPO3_INSTALL_DB_DBNAME'), false);
@@ -41,19 +65,10 @@ class InstallCommandControllerTest extends AbstractCommandTest
             [
                 '--no-interaction',
                 '--skip-extension-setup',
-                '--database-user-name' => getenv('TYPO3_INSTALL_DB_USER'),
-                '--database-user-password' => getenv('TYPO3_INSTALL_DB_PASSWORD'),
-                '--database-host-name' => getenv('TYPO3_INSTALL_DB_HOST'),
-                '--database-port' => '3306',
-                '--database-name' => getenv('TYPO3_INSTALL_DB_DBNAME'),
-                '--admin-user-name' => 'admin',
-                '--admin-password' => 'password',
-                '--site-name' => 'Travis Install',
-                '--site-setup-type' => 'createsite',
             ]
         );
         $this->assertContains('Successfully installed TYPO3 CMS!', $output);
-        $this->assertNotContains('Set up extensions', $output);
+        $this->assertContains('<comment>Skipped</comment> Set up extensions', $output);
     }
 
     /**
@@ -68,19 +83,157 @@ class InstallCommandControllerTest extends AbstractCommandTest
             'install:setup',
             [
                 '--no-interaction',
-                '--database-user-name' => getenv('TYPO3_INSTALL_DB_USER'),
-                '--database-user-password' => getenv('TYPO3_INSTALL_DB_PASSWORD'),
-                '--database-host-name' => getenv('TYPO3_INSTALL_DB_HOST'),
-                '--database-port' => '3306',
-                '--database-name' => getenv('TYPO3_INSTALL_DB_DBNAME'),
-                '--admin-user-name' => 'admin',
-                '--admin-password' => 'password',
-                '--site-name' => 'Travis Install',
-                '--site-setup-type' => 'createsite',
             ]
         );
         $this->assertContains('Successfully installed TYPO3 CMS!', $output);
         $this->assertContains('Set up extensions', $output);
+        $this->assertFileNotExists(getenv('TYPO3_PATH_WEB') . '/.htaccess');
+        $this->assertFileNotExists(getenv('TYPO3_PATH_WEB') . '/web.config');
+    }
+
+    /**
+     * @test
+     */
+    public function setupEvaluatesStepFileIfGiven()
+    {
+        $output = $this->executeConsoleCommand(
+            'install:setup',
+            [
+                '--no-interaction',
+                '--skip-integrity-check',
+            ],
+            [
+                'TYPO3_INSTALL_SETUP_STEPS' => __DIR__ . '/../../Fixtures/Install/custom-install.yaml',
+            ]
+        );
+        $this->assertContains('Successfully installed TYPO3 CMS!', $output);
+        $this->assertContains('Custom step', $output);
+        $this->assertNotContains('Set up extensions', $output);
+    }
+
+    /**
+     * @test
+     */
+    public function deprecatedSetupOptionNonInteractiveWorks()
+    {
+        $output = $this->executeConsoleCommand(
+            'install:setup',
+            [
+                '--non-interactive',
+                '--skip-integrity-check',
+            ],
+            [
+                'TYPO3_INSTALL_SETUP_STEPS' => __DIR__ . '/../../Fixtures/Install/custom-install.yaml',
+            ]
+        );
+        $this->assertContains('Successfully installed TYPO3 CMS!', $output);
+        $this->assertContains('Custom step', $output);
+        $this->assertContains('Option --non-interactive is deprecated. Please use --no-interaction instead.', $output);
+        $this->assertNotContains('Set up extensions', $output);
+    }
+
+    /**
+     * @test
+     */
+    public function setupCreatesHtaccessIfRequested()
+    {
+        $output = $this->executeConsoleCommand(
+            'install:setup',
+            [
+                '--no-interaction',
+                '--skip-integrity-check',
+                '--site-setup-type',
+                'no',
+                '--web-server-config',
+                'apache',
+            ]
+        );
+        $this->assertContains('Successfully installed TYPO3 CMS!', $output);
+        $this->assertFileExists(getenv('TYPO3_PATH_WEB') . '/.htaccess');
+        unlink(getenv('TYPO3_PATH_WEB') . '/.htaccess');
+        $this->assertFileNotExists(getenv('TYPO3_PATH_WEB') . '/web.config');
+    }
+
+    /**
+     * @test
+     */
+    public function setupCreatesWebConfigIfRequested()
+    {
+        $output = $this->executeConsoleCommand(
+            'install:setup',
+            [
+                '--no-interaction',
+                '--skip-integrity-check',
+                '--site-setup-type',
+                'no',
+                '--web-server-config',
+                'iis',
+            ]
+        );
+        $this->assertContains('Successfully installed TYPO3 CMS!', $output);
+        $this->assertFileExists(getenv('TYPO3_PATH_WEB') . '/web.config');
+        unlink(getenv('TYPO3_PATH_WEB') . '/web.config');
+        $this->assertFileNotExists(getenv('TYPO3_PATH_WEB') . '/.htaccess');
+    }
+
+    /**
+     * @test
+     */
+    public function setupEvaluatesStepFileIfGivenWithRelativePath()
+    {
+        $output = $this->executeConsoleCommand(
+            'install:setup',
+            [
+                '--no-interaction',
+                '--skip-integrity-check',
+            ],
+            [
+                'TYPO3_INSTALL_SETUP_STEPS' => 'Tests/Console/Functional/Fixtures/Install/custom-install.yaml',
+            ]
+        );
+        $this->assertContains('Successfully installed TYPO3 CMS!', $output);
+        $this->assertContains('Custom step', $output);
+        $this->assertNotContains('Set up extensions', $output);
+    }
+
+    /**
+     * @test
+     */
+    public function setupEvaluatesStepFileIfGivenWithRelativePathAsCommandOption()
+    {
+        $output = $this->executeConsoleCommand(
+            'install:setup',
+            [
+                '--no-interaction',
+                '--skip-integrity-check',
+                '--install-steps-config',
+                'Tests/Console/Functional/Fixtures/Install/custom-install.yaml',
+            ]
+        );
+        $this->assertContains('Successfully installed TYPO3 CMS!', $output);
+        $this->assertContains('Custom step', $output);
+        $this->assertNotContains('Set up extensions', $output);
+    }
+
+    /**
+     * @test
+     */
+    public function individualStepFilesCanImportDefaultsAndSkipDefaultActions()
+    {
+        $output = $this->executeConsoleCommand(
+            'install:setup',
+            [
+                '--no-interaction',
+                '--skip-integrity-check',
+            ],
+            [
+                'TYPO3_INSTALL_SETUP_STEPS' => 'Tests/Console/Functional/Fixtures/Install/custom-install-import.yaml',
+            ]
+        );
+        $this->assertContains('Successfully installed TYPO3 CMS!', $output);
+        $this->assertContains('Check environment and create folders', $output);
+        $this->assertContains('Custom step', $output);
+        $this->assertNotContains('Set up extensions', $output);
     }
 
     /**
@@ -115,6 +268,24 @@ class InstallCommandControllerTest extends AbstractCommandTest
     /**
      * @test
      */
+    public function packageStatesFileIsCreatedWithoutDependentExtensions()
+    {
+        $packageStatesFile = getenv('TYPO3_PATH_ROOT') . '/typo3conf/PackageStates.php';
+        self::installFixtureExtensionCode('ext_no_dep');
+        self::installFixtureExtensionCode('ext_with_dep');
+        @unlink($packageStatesFile);
+        $this->executeConsoleCommand('install:generatepackagestates');
+        $this->assertTrue(file_exists($packageStatesFile));
+        $packageConfig = require $packageStatesFile;
+        $this->assertArrayNotHasKey('reports', $packageConfig['packages']);
+        self::removeFixtureExtensionCode('ext_no_dep');
+        self::removeFixtureExtensionCode('ext_with_dep');
+        $this->executeConsoleCommand('install:generatepackagestates');
+    }
+
+    /**
+     * @test
+     */
     public function packageStatesFileIsCreatedWithoutDefaultPackages()
     {
         $packageStatesFile = getenv('TYPO3_PATH_ROOT') . '/typo3conf/PackageStates.php';
@@ -122,11 +293,7 @@ class InstallCommandControllerTest extends AbstractCommandTest
         $this->executeConsoleCommand('install:generatepackagestates');
         $this->assertTrue(file_exists($packageStatesFile));
         $packageConfig = require $packageStatesFile;
-        if ($packageConfig['version'] === 5) {
-            $this->assertArrayNotHasKey('reports', $packageConfig['packages']);
-        } else {
-            $this->assertSame('inactive', $packageConfig['packages']['reports']['state']);
-        }
+        $this->assertArrayNotHasKey('reports', $packageConfig['packages']);
     }
 
     /**
@@ -141,6 +308,7 @@ class InstallCommandControllerTest extends AbstractCommandTest
         $this->assertTrue(file_exists($packageStatesFile));
         $packageConfig = require $packageStatesFile;
         copy($packageStatesFile . '_', $packageStatesFile);
+        @unlink($packageStatesFile . '_');
         $this->assertArrayHasKey('reports', $packageConfig['packages']);
     }
 }

@@ -33,24 +33,18 @@ class UpgradeWizardResultRenderer
             return;
         }
         foreach ($upgradeWizardResults as $identifier => $result) {
-            $output->outputLine();
-            if (!$result->hasPerformed()) {
-                $output->outputLine('<warning>Skipped upgrade wizard "%s" because it was not scheduled for execution or marked as done.</warning>', [$identifier]);
-            } else {
-                $output->outputLine('<em>Successfully executed upgrade wizard "%s".</em>', [$identifier]);
-                if (!empty($messages = array_filter($result->getMessages()))) {
-                    $output->outputLine('<info>Messages:</info>');
-                    foreach ($messages as $message) {
-                        $output->outputLine(html_entity_decode(strip_tags($message)));
-                    }
-                }
-                if (!empty($queries = array_filter($result->getSqlQueries()))) {
-                    $output->outputLine('<info>SQL Queries executed:</info>');
-                    foreach ($queries as $query) {
-                        $output->outputLine(html_entity_decode(($query)));
-                    }
-                }
+            if (!empty($messages = array_filter($result->getMessages()))) {
+                $output->outputLine();
+                $this->printMessages($messages, 'Wizard ' . $identifier, $output);
             }
+        }
+    }
+
+    private function printMessages(array $messages, string $title, ConsoleOutput $output)
+    {
+        $output->outputLine('<info>%s:</info>', [$title]);
+        foreach ($messages as $message) {
+            $output->outputLine($message);
         }
     }
 }

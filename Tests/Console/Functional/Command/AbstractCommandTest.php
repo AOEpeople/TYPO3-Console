@@ -35,8 +35,8 @@ abstract class AbstractCommandTest extends \PHPUnit\Framework\TestCase
         ) {
             throw new \RuntimeException('TYPO3_PATH_ROOT is not properly set!', 1493574402);
         }
-        putenv('TYPO3_ACTIVE_FRAMEWORK_EXTENSIONS=scheduler');
-        $_ENV['TYPO3_ACTIVE_FRAMEWORK_EXTENSIONS'] = 'scheduler';
+        putenv('TYPO3_ACTIVE_FRAMEWORK_EXTENSIONS=core');
+        $_ENV['TYPO3_ACTIVE_FRAMEWORK_EXTENSIONS'] = 'core';
         $this->commandDispatcher = CommandDispatcher::createFromTestRun();
     }
 
@@ -60,7 +60,6 @@ abstract class AbstractCommandTest extends \PHPUnit\Framework\TestCase
             $commandLine[] = getenv('TYPO3_INSTALL_DB_DBNAME');
         }
         $mysqlProcess = new Process($commandLine, null, null, $sql, 0);
-        $mysqlProcess->inheritEnvironmentVariables();
         $mysqlProcess->run();
         if (!$mysqlProcess->isSuccessful()) {
             throw new \RuntimeException(sprintf('Executing query "%s" failed. Did you set TYPO3_INSTALL_DB_* correctly? Is your database server running? Output: "%s", Error Output: "%s"', $sql, $mysqlProcess->getOutput(), $mysqlProcess->getErrorOutput()), 1493634196);
@@ -82,7 +81,6 @@ abstract class AbstractCommandTest extends \PHPUnit\Framework\TestCase
         ];
 
         $mysqlProcess = new Process($commandLine, null, null, null, 0);
-        $mysqlProcess->inheritEnvironmentVariables();
         $mysqlProcess->run();
         if (!$mysqlProcess->isSuccessful()) {
             throw new \RuntimeException('Backing up database failed', 1493634217);
@@ -104,7 +102,6 @@ abstract class AbstractCommandTest extends \PHPUnit\Framework\TestCase
         ];
         $sql = file_get_contents(getenv('TYPO3_PATH_ROOT') . '/typo3temp/' . getenv('TYPO3_INSTALL_DB_DBNAME') . '.sql');
         $mysqlProcess = new Process($commandLine, null, null, $sql, 0);
-        $mysqlProcess->inheritEnvironmentVariables();
         $mysqlProcess->run();
         if (!$mysqlProcess->isSuccessful()) {
             throw new \RuntimeException('Restoring database failed', 1493634218);
@@ -115,11 +112,11 @@ abstract class AbstractCommandTest extends \PHPUnit\Framework\TestCase
     /**
      * @param string $extensionKey
      */
-    protected function installFixtureExtensionCode($extensionKey)
+    protected static function installFixtureExtensionCode($extensionKey)
     {
         $sourcePath = dirname(__DIR__) . '/Fixtures/Extensions/' . $extensionKey;
         $targetPath = getenv('TYPO3_PATH_ROOT') . '/typo3conf/ext/' . $extensionKey;
-        $this->copyDirectory($sourcePath, $targetPath);
+        self::copyDirectory($sourcePath, $targetPath);
     }
 
     /**
@@ -127,7 +124,7 @@ abstract class AbstractCommandTest extends \PHPUnit\Framework\TestCase
      * @param string $targetPath
      * @param array $ignoredDirectories
      */
-    protected function copyDirectory($sourcePath, $targetPath, array $ignoredDirectories = [])
+    protected static function copyDirectory($sourcePath, $targetPath, array $ignoredDirectories = [])
     {
         $ignoredDirectories = array_merge($ignoredDirectories, ['.git']);
         $fileSystem = new Filesystem();
@@ -154,15 +151,15 @@ abstract class AbstractCommandTest extends \PHPUnit\Framework\TestCase
     /**
      * @param string $extensionKey
      */
-    protected function removeFixtureExtensionCode($extensionKey)
+    protected static function removeFixtureExtensionCode($extensionKey)
     {
-        $this->removeDirectory(getenv('TYPO3_PATH_ROOT') . '/typo3conf/ext/' . $extensionKey);
+        self::removeDirectory(getenv('TYPO3_PATH_ROOT') . '/typo3conf/ext/' . $extensionKey);
     }
 
     /**
      * @param string $targetPath
      */
-    protected function removeDirectory($targetPath)
+    protected static function removeDirectory($targetPath)
     {
         $fileSystem = new Filesystem();
         $iterator = new \RecursiveIteratorIterator(

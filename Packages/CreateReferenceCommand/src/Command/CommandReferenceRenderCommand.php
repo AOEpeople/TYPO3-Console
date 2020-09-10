@@ -24,16 +24,19 @@ namespace Typo3Console\CreateReferenceCommand\Command;
  * The TYPO3 project - inspiring people to share!                         *
  *                                                                        */
 
+use Helhum\Typo3Console\Command\RelatableCommandInterface;
 use Helhum\Typo3Console\Mvc\Cli\CommandCollection;
+use Helhum\Typo3Console\Mvc\Cli\CommandConfiguration;
 use Helhum\Typo3Console\Mvc\Cli\Symfony\Application;
-use Helhum\Typo3Console\Mvc\Cli\Symfony\Command\CommandControllerCommand;
 use Symfony\Component\Console\Descriptor\ApplicationDescription;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputDefinition;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\CMS\Fluid\View\StandaloneView;
+use Typo3Console\CreateReferenceCommand\EmptyTypo3CommandRegistry;
 
 /**
  * "Command Reference" command controller for the Documentation package.
@@ -42,11 +45,13 @@ use TYPO3\CMS\Fluid\View\StandaloneView;
 class CommandReferenceRenderCommand extends \Symfony\Component\Console\Command\Command
 {
     private $skipCommands = [
-        'commandreference:render',
-        'language:update',
         'server:run',
-        'swiftmailer:spool:send',
     ];
+
+    public function isEnabled()
+    {
+        return getenv('TYPO3_CONSOLE_RENDERING_REFERENCE') === false;
+    }
 
     protected function configure()
     {
@@ -80,11 +85,35 @@ class CommandReferenceRenderCommand extends \Symfony\Component\Console\Command\C
      */
     protected function renderReference(OutputInterface $output): int
     {
-        CommandCollection::$rendersReference = true;
-        CommandControllerCommand::$rendersReference = true;
+        putenv('TYPO3_CONSOLE_RENDERING_REFERENCE=1');
         $_SERVER['PHP_SELF'] = Application::COMMAND_NAME;
-        $application = $this->getApplication();
-        $applicationDescription = new ApplicationDescription($application);
+        $commandReferenceDir = getenv('TYPO3_PATH_COMPOSER_ROOT') . '/Documentation/CommandReference/';
+        GeneralUtility::flushDirectory($commandReferenceDir, true);
+        $commandCollection = new CommandCollection(new CommandConfiguration(), new EmptyTypo3CommandRegistry());
+        $application = new class($this->getApplication()) extends \Symfony\Component\Console\Application {
+            /**
+             * @var Application
+             */
+            private $application;
+
+            public function __construct(Application $application, string $name = 'UNKNOWN', string $version = 'UNKNOWN')
+            {
+                parent::__construct($name, $version);
+                $this->application = $application;
+            }
+
+            protected function getDefaultInputDefinition()
+            {
+                return $this->application->getDefaultInputDefinition();
+            }
+
+            protected function getDefaultCommands()
+            {
+                return $this->application->getDefaultCommands();
+            }
+        };
+        $application->setCommandLoader($commandCollection);
+        $applicationDescription = new ApplicationDescription($application, null, true);
         $commands = $applicationDescription->getCommands();
         $allCommands = [];
         foreach ($commands as $command) {
@@ -115,7 +144,7 @@ class CommandReferenceRenderCommand extends \Symfony\Component\Console\Command\C
             }
 
             $relatedCommands = [];
-            if (is_callable([$command, 'getRelatedCommandNames'])) {
+            if ($command instanceof RelatableCommandInterface) {
                 $relatedCommandIdentifiers = $command->getRelatedCommandNames();
                 foreach ($relatedCommandIdentifiers as $relatedCommandIdentifier) {
                     $commandParts = explode(':', $relatedCommandIdentifier);
@@ -142,10 +171,18 @@ class CommandReferenceRenderCommand extends \Symfony\Component\Console\Command\C
                 'options' => $optionDescriptions,
                 'arguments' => $argumentDescriptions,
                 'relatedCommands' => $relatedCommands,
+                'docIdentifier' => str_replace(':', '-', $command->getName()),
+                'docDirectory' => str_replace(':', '', ucwords($command->getName(), ':')),
             ];
+
+            $standaloneView = new StandaloneView();
+            $templatePathAndFilename = __DIR__ . '/../../Resources/Templates/CommandTemplate.txt';
+            $standaloneView->setTemplatePathAndFilename($templatePathAndFilename);
+            $standaloneView->assignMultiple(['command' => $allCommands[$command->getName()]]);
+
+            $renderedOutputFile = $commandReferenceDir . $allCommands[$command->getName()]['docDirectory'] . '.rst';
+            file_put_contents($renderedOutputFile, $standaloneView->render());
         }
-        CommandCollection::$rendersReference = false;
-        CommandControllerCommand::$rendersReference = false;
 
         $applicationOptions = [];
         foreach ($application->getDefinition()->getOptions() as $option) {
@@ -200,8 +237,8 @@ class CommandReferenceRenderCommand extends \Symfony\Component\Console\Command\C
         $output = preg_replace('|\<comment>(((?!\</comment>).)*)\</comment>|', '**$1**', $output);
         $output = preg_replace('|\<warning>(((?!\</warning>).)*)\</warning>|', '**$1**', $output);
         $output = preg_replace('|\<strike>(((?!\</strike>).)*)\</strike>|', '[$1]', $output);
-        $output = preg_replace('|\<code>(((?!\</code>).)*)\</code>|', '``$1``', $output);
-        $output = preg_replace('|\<info>(((?!\</info>).)*)\</info>|', '``$1``', $output);
+        $output = preg_replace('|\<code>(((?!\</code>).)*)\</code>|', '`$1`', $output);
+        $output = preg_replace('|\<info>(((?!\</info>).)*)\</info>|', '`$1`', $output);
 
         return $output;
     }

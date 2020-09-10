@@ -4,31 +4,25 @@ $EM_CONF[$_EXTKEY] = [
   'description' => 'A reliable and powerful command line interface for TYPO3 CMS',
   'category' => 'cli',
   'state' => 'stable',
-  'uploadfolder' => 0,
-  'createDirs' => '',
   'modify_tables' => '',
   'clearCacheOnLoad' => 0,
   'author' => 'Helmut Hummel',
   'author_email' => 'info@helhum.io',
   'author_company' => 'helhum.io',
-  'version' => '5.2.0',
+  'version' => '6.3.1',
   'constraints' => [
     'depends' => [
-      'php' => '7.0.0-7.2.99',
-      'typo3' => '8.7.10-9.1.99',
-      'extbase' => '8.7.10-9.1.99',
-      'extensionmanager' => '8.7.10-9.1.99',
-      'fluid' => '8.7.10-9.1.99',
-      'install' => '8.7.10-9.1.99',
-      'scheduler' => '8.7.10-9.1.99',
-      'saltedpasswords' => '8.7.10-9.1.99',
+      'php' => '7.2.0-7.4.99',
+      'typo3' => '10.4.0-10.4.99',
+      'extbase' => '10.4.0-10.4.99',
+      'extensionmanager' => '10.4.0-10.4.99',
+      'fluid' => '10.4.0-10.4.99',
+      'install' => '10.4.0-10.4.99',
     ],
     'conflicts' => [
         'dbal' => '',
     ],
     'suggests' => [
     ],
-  ],
-  'autoload' => [
   ],
 ];

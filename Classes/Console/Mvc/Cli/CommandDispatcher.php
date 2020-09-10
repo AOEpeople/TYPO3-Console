@@ -54,17 +54,24 @@ class CommandDispatcher
     /**
      * Create the dispatcher from within a composer plugin context
      *
-     * Just provide the composer script event to cover most cases
-     *
-     * @param ScriptEvent $event
-     * @param array $commandLine
-     * @param array $environmentVars
-     * @param PhpExecutableFinder $phpFinder
-     * @throws RuntimeException
+     * @param array $arguments
+     * @internal param ScriptEvent $event (deprecated) Possibly given but deprecated event
+     * @internal param array $commandLine
+     * @internal param array $environmentVars
+     * @internal param PhpExecutableFinder $phpFinder
      * @return CommandDispatcher
      */
-    public static function createFromComposerRun(ScriptEvent $event, array $commandLine = [], array $environmentVars = [], PhpExecutableFinder $phpFinder = null): self
+    public static function createFromComposerRun(...$arguments): self
     {
+        if (isset($arguments[0]) && $arguments[0] instanceof ScriptEvent) {
+            // Calling createFromComposerRun with ScriptEvent as first argument is deprecated and will be removed with 6.0
+            array_shift($arguments);
+        }
+
+        $commandLine = $arguments[0] ?? [];
+        $environmentVars = $arguments[1] ?? [];
+        $phpFinder = $arguments[2] ?? null;
+
         // should be Application::COMMAND_NAME, but our Application class currently conflicts with symfony/console 2.7, which is used by Composer
         $typo3CommandPath = dirname(__DIR__, 4) . '/typo3cms';
         $environmentVars['TYPO3_CONSOLE_PLUGIN_RUN'] = true;
@@ -124,20 +131,25 @@ class CommandDispatcher
      */
     public static function create($typo3CommandPath, array $commandLine = [], array $environmentVars = [], PhpExecutableFinder $phpFinder = null): self
     {
+        $environmentVars['TYPO3_CONSOLE_SUB_PROCESS'] = $environmentVars['TYPO3_CONSOLE_SUB_PROCESS'] ?? '1';
         $phpFinder = $phpFinder ?: new PhpExecutableFinder();
         if (!($php = $phpFinder->find(false))) {
             throw new RuntimeException('The "php" binary could not be found.', 1485128615);
         }
         array_unshift($commandLine, $typo3CommandPath);
-        if (!empty($phpArguments = $phpFinder->findArguments())) {
-            array_unshift($commandLine, ...$phpArguments);
-        }
-        array_unshift($commandLine, $php);
+        $phpArguments = $phpFinder->findArguments();
         if (getenv('PHP_INI_PATH')) {
-            $commandLine[] = '-c';
-            $commandLine[] = getenv('PHP_INI_PATH');
+            $phpArguments[] = '-c';
+            $phpArguments[] = getenv('PHP_INI_PATH');
         }
-        $environmentVars['TYPO3_CONSOLE_SUB_PROCESS'] = true;
+        // Ensure we do not output PHP startup errors for sub-processes to not have them interfere with process output
+        // Later, very early in booting the error reporting is set to an appropriate value anyway
+        $phpArguments[] = '-d';
+        $phpArguments[] = 'error_reporting=0';
+        $phpArguments[] = '-d';
+        $phpArguments[] = 'display_errors=0';
+        array_unshift($commandLine, ...$phpArguments);
+        array_unshift($commandLine, $php);
 
         return new self($commandLine, $environmentVars);
     }
@@ -212,7 +224,6 @@ class CommandDispatcher
             );
         } else {
             $process = new Process($commandLine, null, $envVars, $input, 0);
-            $process->inheritEnvironmentVariables();
         }
 
         return $process;

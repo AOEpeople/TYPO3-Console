@@ -1,7 +1,10 @@
 {
-    "repositories": [
-        {"type": "path", "url": "Packages/*"}
-    ],
+    "repositories": {
+        "local": {
+            "type": "path",
+            "url": "Packages/*"
+        }
+    },
     "name": "helhum/typo3-console",
     "description": "A reliable and powerful command line interface for TYPO3 CMS",
     "keywords": [
@@ -25,31 +28,31 @@
     ],
     "license": "GPL-2.0-or-later",
     "require": {
-        "php": ">=7.0.0 <7.3",
+        "php": "^7.2",
         "helhum/typo3-console-plugin": "^2.0.2",
 
-        "typo3/cms-backend": "^8.7.10 || ~9.1.0",
-        "typo3/cms-core": "^8.7.10 || ~9.1.0",
-        "typo3/cms-extbase": "^8.7.10 || ~9.1.0",
-        "typo3/cms-extensionmanager": "^8.7.10 || ~9.1.0",
-        "typo3/cms-fluid": "^8.7.10 || ~9.1.0",
-        "typo3/cms-frontend": "^8.7.10 || ~9.1.0",
-        "typo3/cms-install": "^8.7.10 || ~9.1.0",
-        "typo3/cms-saltedpasswords": "^8.7.10 || ~9.1.0",
-        "typo3/cms-scheduler": "^8.7.10 || ~9.1.0",
+        "typo3/cms-backend": "^10.4.1",
+        "typo3/cms-core": "^10.4.1",
+        "typo3/cms-extbase": "^10.4.1",
+        "typo3/cms-extensionmanager": "^10.4.1",
+        "typo3/cms-fluid": "^10.4.1",
+        "typo3/cms-frontend": "^10.4.1",
+        "typo3/cms-install": "^10.4.1",
 
         "doctrine/annotations": "^1.4",
-        "symfony/console": "^3.4.4 || ^4.0",
-        "symfony/process": "^3.4.4 || ^4.0"
+        "symfony/console": "^4.4 || ^5.0",
+        "symfony/process": "^4.4 || ^5.0",
+        "helhum/config-loader": ">=0.9 <0.13"
     },
     "require-dev": {
-        "typo3/cms-reports": "^8.7.10 || ~9.1.0 || 9.2.*@dev",
-        "typo3/cms-filemetadata": "^8.7.10 || ~9.1.0 || 9.2.*@dev",
-
-        "typo3-console/php-server-command": "^0.2",
+        "typo3/cms-reports": "^10.4.1 || dev-master",
+        "typo3/cms-filemetadata": "^10.4.1 || dev-master",
         "typo3-console/create-reference-command": "@dev",
-        "symfony/filesystem": "^3.2",
-        "nimut/testing-framework": "3.*@dev"
+        "typo3-console/php-server-command": "^0.2",
+        "symfony/expression-language": "^4.4 || ^5.0",
+        "symfony/filesystem": "^4.4 || ^5.0",
+        "nimut/testing-framework": "5.x-dev",
+        "php-parallel-lint/php-parallel-lint": "^1.2"
     },
     "conflict": {
         "typo3-ter/dbal": "*",
@@ -60,8 +63,7 @@
         "psr-4": {
             "Helhum\\Typo3Console\\": [
                 "Classes/Console/",
-                "Classes/Compatibility/",
-                "Resources/Private/ExtensionArtifacts/src/"
+                "Classes/Compatibility/"
             ]
         }
     },
@@ -71,11 +73,12 @@
         }
     },
     "replace": {
-        "typo3_console": "self.version",
-        "typo3-ter/typo3-console": "self.version",
-        "typo3/cms-cli": "*"
+        "typo3-ter/typo3-console": "self.version"
     },
     "config": {
+        "preferred-install": {
+            "*": "dist"
+        },
         "vendor-dir": ".Build/vendor",
         "bin-dir": ".Build/bin"
     },
@@ -84,40 +87,39 @@
     ],
     "scripts": {
         "set-version": [
-            "Helhum\\Typo3Console\\Composer\\InstallerScripts::setVersion"
+            "Helhum\\Typo3Console\\Composer\\ScriptHelper::setVersion"
         ],
-        "extension-copy-artifacts": [
-            "cp -f Resources/Private/ExtensionArtifacts/ext_* .",
-            "mkdir -p Resources/Public/Icons",
-            "cp -f ext_icon.png Resources/Public/Icons/Extension.png"
+        "extension-verify-composer-json": [
+            "Helhum\\Typo3Console\\Composer\\ScriptHelper::verifyComposerJsonOfExtension"
         ],
-        "extension-create-libs": [
-            "mkdir -p Libraries/temp",
-            "[ -f $HOME/.composer/vendor/bin/phar-composer ] || composer global require clue/phar-composer",
-            "if [ ! -f Libraries/symfony-process.phar ]; then cd Libraries/temp && composer require symfony/console=^3.4.4 symfony/process=^3.4.4 && composer config classmap-authoritative true && composer config prepend-autoloader true && composer dump-autoload -o; fi",
-            "[ -f Libraries/symfony-process.phar ] || $HOME/.composer/vendor/bin/phar-composer build Libraries/temp/ Libraries/symfony-process.phar",
-            "chmod -x Libraries/*.phar",
-            "rm -rf Libraries/temp"
+        "extension-copy": [
+            "@extension-clean",
+            "mkdir -p ../extension",
+            "cp -r Resources/Private/ExtensionArtifacts/* ../extension/"
         ],
         "extension-build": [
-            "@extension-create-libs",
-            "@extension-copy-artifacts"
+            "@extension-copy",
+            "@composer config repositories.console '{\"type\": \"path\", \"url\": \"'$(pwd)'\", \"options\": {\"symlink\": false}}' -d ../extension",
+            "@composer install -d ../extension/"
         ],
         "extension-release": [
             "@extension-build",
-            "rm Resources/Private/ExtensionArtifacts/ext_*",
-            "rm -rf Tests/",
-            "rm .gitattributes",
-            "rm .gitignore",
-            "rm .php_cs.dist",
-            "rm .styleci.yml",
-            "rm phpunit.xml.dist",
-            "rm appveyor.yml",
-            "rm .travis.yml"
+            "sed -i.bak -e 's/\"typo3-console\\/extension\"/\"helhum\\/typo3-console\"/g' ../extension/composer.json",
+            "rm ../extension/composer.lock",
+            "rm ../extension/composer.json.bak",
+            "rm -rf ../extension/Libraries/bin/",
+            "rm -rf ../extension/Libraries/helhum/typo3-console/Packages/",
+            "rm -rf ../extension/Libraries/helhum/typo3-console/Resources/Private/ExtensionArtifacts/",
+            "rm -rf ../extension/Libraries/helhum/typo3-console/Resources/Private/Patches/",
+            "rm -rf ../extension/Libraries/helhum/typo3-console/Tests/",
+            "rm -rf ../extension/Libraries/helhum/typo3-console/.github/",
+            "mv ../extension/Libraries/helhum/typo3-console/Documentation/ ../extension/"
         ],
         "extension-clean": [
-            "rm -rf Libraries Resources/Public/Icons",
-            "rm -f ext_*"
+            "rm -rf ../extension/*"
+        ],
+        "docs:render": [
+            "docker-compose -f render-documentation.yml up"
         ]
     },
     "extra": {

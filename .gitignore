@@ -1,10 +1,10 @@
 /.Build/*
-/composer.lock
+/Classes/Console/Hook/*
+/Configuration/ComposerPackagesCommands.php
+/Libraries/vendor
+/Resources/Public/*
 
-/Configuration/Console/ComposerPackagesCommands.php
-/Libraries/*
-/ext_emconf.php
-/ext_icon.png
-/Resources/Public/Icons/Extension.png
-/ext_localconf.php
 /.php_cs.cache
+/composer.lock
+/ext_*
+*GENERATED*

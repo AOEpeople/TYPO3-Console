@@ -36,6 +36,10 @@ class CliMessageRenderer
 
     public function render(array $messages)
     {
+        if (empty($messages)) {
+            return;
+        }
+
         $this->output->outputLine();
         foreach ($messages as $statusMessage) {
             $this->renderSingle($statusMessage);
@@ -45,7 +49,7 @@ class CliMessageRenderer
     private function renderSingle($statusMessage)
     {
         $severity = self::$severityMap[$statusMessage['severity']] ?? 'notice';
-        $subject = strtoupper($severity) . ': ' . $statusMessage['title'];
+        $subject = strtoupper($severity) . ': ' . $statusMessage['title'] ?? '';
         switch ($severity) {
             case 'error':
             case 'warning':

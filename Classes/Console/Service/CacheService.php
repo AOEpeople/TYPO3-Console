@@ -14,15 +14,9 @@ namespace Helhum\Typo3Console\Service;
  *
  */
 
-use Helhum\Typo3Console\Core\Booting\CompatibilityScripts;
-use Helhum\Typo3Console\Core\Booting\Scripts;
-use Helhum\Typo3Console\Service\Configuration\ConfigurationService;
-use Symfony\Component\Console\Exception\RuntimeException;
-use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
-use TYPO3\CMS\Core\Cache\Backend\SimpleFileBackend;
+use TYPO3\CMS\Core\Authentication\CommandLineUserAuthentication;
 use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Cache\Exception\NoSuchCacheGroupException;
-use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 use TYPO3\CMS\Core\Core\Bootstrap;
 use TYPO3\CMS\Core\DataHandling\DataHandler;
 use TYPO3\CMS\Core\SingletonInterface;
@@ -39,90 +33,45 @@ class CacheService implements SingletonInterface
     protected $cacheManager;
 
     /**
-     * @var ConfigurationService
+     * @var array
      */
-    protected $configurationService;
+    protected $cacheConfiguration;
 
-    /**
-     * @var Bootstrap
-     */
-    private $bootstrap;
-
-    /**
-     * @var CacheLowLevelCleaner
-     */
-    private $lowLevelCleaner;
-
-    /**
-     * Builds the dependencies correctly
-     *
-     * @param CacheManager $cacheManager
-     * @param ConfigurationService $configurationService
-     */
-    public function __construct(CacheManager $cacheManager, ConfigurationService $configurationService, Bootstrap $bootstrap = null, CacheLowLevelCleaner $lowLevelCleaner = null)
+    public function __construct(array $cacheConfiguration = null)
     {
-        $this->cacheManager = $cacheManager;
-        $this->configurationService = $configurationService;
-        $this->bootstrap = $bootstrap ?: Bootstrap::getInstance();
-        $this->lowLevelCleaner = $lowLevelCleaner ?: new CacheLowLevelCleaner();
+        // We need a new instance here to get the real caches instead of the disabled ones
+        $this->cacheManager = new CacheManager();
+        $this->cacheConfiguration = $cacheConfiguration ?? $GLOBALS['TYPO3_CONF_VARS']['SYS']['caching']['cacheConfigurations'];
+        $this->cacheManager->setCacheConfigurations($this->cacheConfiguration);
     }
 
     /**
      * Flushes all caches
-     *
-     * @param bool $force
      */
-    public function flush($force = false)
+    public function flush()
     {
-        $this->ensureDatabaseIsInitialized();
-        $this->reEnableCoreCaches();
-        if ($force) {
-            $this->lowLevelCleaner->forceFlushCachesFiles();
-            $this->lowLevelCleaner->forceFlushDatabaseCacheTables();
-        }
         $this->cacheManager->flushCaches();
     }
 
     /**
-     * Flushes all file based caches
-     *
-     * @param bool $force
-     */
-    public function flushFileCaches($force = false)
-    {
-        if ($force) {
-            $this->lowLevelCleaner->forceFlushCachesFiles();
-        }
-        foreach ($this->getFileCaches() as $cache) {
-            $cache->flush();
-        }
-    }
-
-    /**
-     * Flushes caches using the data handler. This should not be necessary any more in the future.
+     * Flushes caches using the data handler.
      * Although we trigger the cache flush API here, the real intention is to trigger
-     * hook subscribers, so that they can do their job (flushing "other" caches when cache is flushed.
-     * For example realurl subscribes to these hooks.
+     * hook subscribers, so that they can do their job (flushing "other" caches when cache is flushed).
      *
      * We use "all" because this method is only called from "flush" command which is indeed meant
      * to flush all caches. Besides that, "all" is really all caches starting from TYPO3 8.x
      * thus it would make sense for the hook subscribers to act on that cache clear type.
      *
      * However if you find a valid use case for us to also call "pages" here, then please create
-     * a pull request and describe this case. "system" or "temp_cached" will not be added however
-     * because these are deprecated since TYPO3 8.x
-     *
-     * Besides that, this DataHandler API is probably something to be removed in TYPO3,
-     * so we deprecate and mark this method as internal at the same time.
-     *
-     * @deprecated Will be removed once DataHandler cache flush methods are removed in supported TYPO3 versions
-     * @internal
+     * a pull request and describe this case.
      */
-    public function flushCachesWithDataHandler()
+    public function flushCachesWithDataHandler(): void
     {
-        $this->ensureDatabaseIsInitialized();
-        $this->ensureBackendUserIsInitialized();
-        self::createDataHandlerFromGlobals()->clear_cacheCmd('all');
+        Bootstrap::initializeBackendUser(CommandLineUserAuthentication::class);
+        Bootstrap::initializeBackendAuthentication();
+        $dataHandler = GeneralUtility::makeInstance(DataHandler::class);
+        $dataHandler->start([], []);
+        $dataHandler->clear_cacheCmd('all');
     }
 
     /**
@@ -130,11 +79,11 @@ class CacheService implements SingletonInterface
      *
      * @param array $groups
      * @throws NoSuchCacheGroupException
+     * @return void
      */
-    public function flushGroups(array $groups)
+    public function flushGroups(array $groups): void
     {
         $this->ensureCacheGroupsExist($groups);
-        $this->ensureDatabaseIsInitialized();
         foreach ($groups as $group) {
             $this->cacheManager->flushCachesInGroup($group);
         }
@@ -145,10 +94,11 @@ class CacheService implements SingletonInterface
      *
      * @param array $tags
      * @param string $group
+     * @throws NoSuchCacheGroupException
+     * @return void
      */
-    public function flushByTags(array $tags, $group = null)
+    public function flushByTags(array $tags, $group = null): void
     {
-        $this->ensureDatabaseIsInitialized();
         foreach ($tags as $tag) {
             if ($group === null) {
                 $this->cacheManager->flushCachesByTag($tag);
@@ -163,8 +113,10 @@ class CacheService implements SingletonInterface
      *
      * @param array $tags
      * @param array $groups
+     * @throws NoSuchCacheGroupException
+     * @return void
      */
-    public function flushByTagsAndGroups(array $tags, array $groups = null)
+    public function flushByTagsAndGroups(array $tags, array $groups = null): void
     {
         if ($groups === null) {
             $this->flushByTags($tags);
@@ -176,53 +128,23 @@ class CacheService implements SingletonInterface
         }
     }
 
-    /**
-     * @return array
-     */
-    public function getValidCacheGroups()
+    public function getValidCacheGroups(): array
     {
         $validGroups = [];
-        foreach ($this->configurationService->getActive('SYS/caching/cacheConfigurations') as $cacheConfiguration) {
+        foreach ($this->cacheConfiguration as $cacheConfiguration) {
             if (isset($cacheConfiguration['groups']) && is_array($cacheConfiguration['groups'])) {
-                $validGroups = array_merge($validGroups, $cacheConfiguration['groups']);
+                $validGroups[] = $cacheConfiguration['groups'];
             }
         }
 
-        return array_unique($validGroups);
-    }
-
-    private function reEnableCoreCaches()
-    {
-        Scripts::reEnableOriginalCoreCaches($this->bootstrap);
-    }
-
-    /**
-     * @deprecated can be removed when TYPO3 8 support is removed
-     */
-    private function ensureDatabaseIsInitialized()
-    {
-        if (!empty($GLOBALS['TYPO3_DB'])) {
-            // Already initialized
-            return;
-        }
-        CompatibilityScripts::initializeDatabaseConnection($this->bootstrap);
-    }
-
-    private function ensureBackendUserIsInitialized()
-    {
-        if (!empty($GLOBALS['BE_USER'])) {
-            // Already initialized
-            return;
-        }
-        Scripts::initializePersistence($this->bootstrap);
-        Scripts::initializeAuthenticatedOperations($this->bootstrap);
+        return array_unique(array_merge(...$validGroups));
     }
 
     /**
      * @param array $groups
-     * @throws \TYPO3\CMS\Core\Cache\Exception\NoSuchCacheGroupException
+     * @throws NoSuchCacheGroupException
      */
-    private function ensureCacheGroupsExist($groups)
+    private function ensureCacheGroupsExist($groups): void
     {
         $validGroups = $this->getValidCacheGroups();
         $sanitizedGroups = array_intersect($groups, $validGroups);
@@ -230,47 +152,5 @@ class CacheService implements SingletonInterface
             $invalidGroups = array_diff($groups, $sanitizedGroups);
             throw new NoSuchCacheGroupException('Invalid cache groups "' . implode(', ', $invalidGroups) . '".', 1399630162);
         }
-    }
-
-    /**
-     * @return FrontendInterface[]
-     */
-    private function getFileCaches()
-    {
-        $this->reEnableCoreCaches();
-        $fileCaches = [];
-        foreach ($GLOBALS['TYPO3_CONF_VARS']['SYS']['caching']['cacheConfigurations'] as $identifier => $cacheConfiguration) {
-            if (
-                isset($cacheConfiguration['backend'])
-                && (
-                    $cacheConfiguration['backend'] === SimpleFileBackend::class
-                    || is_subclass_of($cacheConfiguration['backend'], SimpleFileBackend::class)
-                )
-            ) {
-                $fileCaches[] = $this->cacheManager->getCache($identifier);
-            }
-        }
-
-        return $fileCaches;
-    }
-
-    /**
-     * Create a data handler instance from global state (with user being admin)
-     *
-     * @internal
-     * @throws RuntimeException
-     * @return DataHandler
-     */
-    private static function createDataHandlerFromGlobals()
-    {
-        if (empty($GLOBALS['BE_USER']) || !$GLOBALS['BE_USER'] instanceof BackendUserAuthentication) {
-            throw new RuntimeException('No backend user initialized. flushCachesWithDataHandler needs fully initialized TYPO3', 1477066610);
-        }
-        $user = clone $GLOBALS['BE_USER'];
-        $user->admin = 1;
-        $dataHandler = GeneralUtility::makeInstance(DataHandler::class);
-        $dataHandler->start([], [], $user);
-
-        return $dataHandler;
     }
 }

@@ -15,9 +15,11 @@ namespace Helhum\Typo3Console\Install\Upgrade;
  */
 
 use Symfony\Component\Console\Exception\RuntimeException;
+use Symfony\Component\Console\Output\BufferedOutput;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\CMS\Extbase\Object\ObjectManager;
-use TYPO3\CMS\Install\Updates\AbstractUpdate;
+use TYPO3\CMS\Install\Updates\ChattyInterface;
+use TYPO3\CMS\Install\Updates\UpgradeWizardInterface;
 
 /**
  * Creates a single upgrade wizard
@@ -52,13 +54,16 @@ class UpgradeWizardFactory
      *
      * @param string $identifier The identifier or class name of an upgrade wizard
      * @throws RuntimeException
-     * @return AbstractUpdate Newly instantiated upgrade wizard
+     * @return UpgradeWizardInterface Newly instantiated upgrade wizard
      */
-    public function create(string $identifier): AbstractUpdate
+    public function create(string $identifier)
     {
-        /** @var AbstractUpdate $upgradeWizard */
+        /** @var UpgradeWizardInterface $upgradeWizard */
         $upgradeWizard = $this->objectManager->get($this->getClassNameFromIdentifier($identifier));
-        $upgradeWizard->setIdentifier($identifier);
+        if ($upgradeWizard instanceof ChattyInterface) {
+            $output = new BufferedOutput();
+            $upgradeWizard->setOutput($output);
+        }
 
         return $upgradeWizard;
     }

@@ -14,7 +14,7 @@ namespace Helhum\Typo3Console\Service;
  *
  */
 
-use TYPO3\CMS\Core\Database\ConnectionPool;
+use TYPO3\CMS\Core\Core\Environment;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
@@ -25,25 +25,11 @@ class CacheLowLevelCleaner
     /**
      * Recursively delete cache directory
      */
-    public function forceFlushCachesFiles()
+    public function forceFlushCachesFiles(): void
     {
-        $cacheDirectory = PATH_site . 'typo3temp/var/Cache';
-        GeneralUtility::flushDirectory($cacheDirectory, true);
-    }
-
-    /**
-     * Truncate all DB tables prefixed with 'cf_'
-     */
-    public function forceFlushDatabaseCacheTables()
-    {
-        // Get all table names from Default connection starting with 'cf_' and truncate them
-        $connectionPool = GeneralUtility::makeInstance(ConnectionPool::class);
-        $connection = $connectionPool->getConnectionByName('Default');
-        $tablesNames = $connection->getSchemaManager()->listTableNames();
-        foreach ($tablesNames as $tableName) {
-            if ($tableName === 'cache_treelist' || strpos($tableName, 'cf_') === 0) {
-                $connection->truncate($tableName);
-            }
+        $cacheDirPattern = Environment::getVarPath() . '/cache/*/*';
+        foreach (glob($cacheDirPattern) as $path) {
+            GeneralUtility::flushDirectory($path, true);
         }
     }
 }
