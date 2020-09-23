@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+
 namespace Helhum\Typo3Console\Command;
 
 /*
@@ -81,9 +82,10 @@ class DatabaseCommandController extends CommandController
      *
      * @param array $schemaUpdateTypes List of schema update types (default: "safe")
      * @param bool $dryRun If set the updates are only collected and shown, but not executed
+     * @param bool $raw If set Database Query will be written to the screen
      * @Definition\Argument(name="schemaUpdateTypes")
      */
-    public function updateSchemaCommand(array $schemaUpdateTypes = ['safe'], $dryRun = false)
+    public function updateSchemaCommand(array $schemaUpdateTypes = ['safe'], $dryRun = false, $raw = false)
     {
         $verbose = $this->output->getSymfonyConsoleOutput()->isVerbose();
         try {
@@ -94,6 +96,15 @@ class DatabaseCommandController extends CommandController
         }
 
         $result = $this->schemaService->updateSchema($expandedSchemaUpdateTypes, $dryRun);
+
+        if ($raw) {
+            foreach ($result->getPerformedUpdates() as $updatesTypes) {
+                foreach ($updatesTypes as $updates) {
+                    $this->output->outputLine($updates . chr(59));
+                }
+            }
+            $this->quit(0);
+        }
 
         if ($result->hasPerformedUpdates()) {
             $this->output->outputLine('<info>The following database schema updates %s performed:</info>', [$dryRun ? 'should be' : 'were']);
