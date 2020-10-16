@@ -100,7 +100,7 @@ class DatabaseCommandController extends CommandController
         if ($raw) {
             foreach ($result->getPerformedUpdates() as $updatesTypes) {
                 foreach ($updatesTypes as $updates) {
-                    $this->output->outputLine($updates . chr(59));
+                    $this->output->outputLine($updates . PHP_EOL);
                 }
             }
             $this->quit(0);
