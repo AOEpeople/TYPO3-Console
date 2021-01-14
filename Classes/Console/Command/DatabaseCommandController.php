@@ -87,10 +87,6 @@ class DatabaseCommandController extends CommandController
      */
     public function updateSchemaCommand(array $schemaUpdateTypes = ['safe'], $dryRun = false, $raw = false)
     {
-        $time_start = microtime(true);
-
-        error_log('StartTime: ' . $time_start . chr(10), 3, '/tmp/helhum-update-database.log');
-
         $verbose = $this->output->getSymfonyConsoleOutput()->isVerbose();
         try {
             $expandedSchemaUpdateTypes = SchemaUpdateType::expandSchemaUpdateTypes($schemaUpdateTypes);
@@ -103,15 +99,10 @@ class DatabaseCommandController extends CommandController
 
         if ($raw) {
             foreach ($result->getPerformedUpdates() as $updatesTypes) {
-                error_log('Each Update Type: ' . (microtime(true) - $time_start) . chr(10), 3, '/tmp/helhum-update-database.log');
                 foreach ($updatesTypes as $updates) {
-                    error_log('Each Updates: ' . (microtime(true) - $time_start) .'::::'. $updates . chr(10), 3, '/tmp/helhum-update-database.log');
                     $this->output->outputLine($updates . '; ' . PHP_EOL);
                 }
             }
-            $time_end = microtime(true);
-            $time = $time_end - $time_start;
-            error_log('Total: ' . $time . chr(10), 3, '/tmp/helhum-update-database.log');
             $this->quit(0);
         }
 
